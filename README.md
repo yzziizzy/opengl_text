@@ -3,5 +3,6 @@ OpenGL text rending library using FreeType in C.
 
 MIT or BSD license.
 
-Depends on git@github.com:yzziizzy/opengl_text.git
+Depends on GLEW, [http://github.com/yzziizzy/c3dlas] and FreeType (`-lfreetype` usually);
+
 

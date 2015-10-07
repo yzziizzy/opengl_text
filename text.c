@@ -44,7 +44,7 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 	FT_Error err;
 	FT_GlyphSlot slot;
 	TextRes* res;
-	int i, charlen, width, h_above, h_below, height, padding, xoffset;
+	int i, j, charlen, width, h_above, h_below, height, padding, xoffset;
 	
 	padding = 2;
 	
@@ -140,10 +140,28 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 	for(i = 0; i < charlen; i++) {
 		for(j = 0; j < charlen; j++) {
 			
+			// TODO: calculate real kerning 
 			res->kerning[(i * charlen) + j] = 0;
 			
 		}
 	}
+	
+	
+	//////////// opengl stuff ////////////
+	
+	// TODO: error checking
+	glGenTextures(1, &res->textureID);
+	glBindTexture(GL_TEXTURE_2D, res->textureID);
+	
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0); // no mipmaps for this; it'll get fucked up
+	
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, res->texture);
+	
+	glBindTexture(GL_TEXTURE_2D, 0);
 	
 	
 	return res;

@@ -13,13 +13,14 @@ typedef struct {
 	unsigned short* offsets;
 	unsigned char* kerning;
 	
+	GLuint textureID;
 	
 } TextRes;
 
 
 
 
-// this function is rather expensive
+// this function is rather expensive. it rebinds textures.
 TextRes* LoadFont(char* path, int size, char* chars);
 
 void FreeFont(TextRes* res);

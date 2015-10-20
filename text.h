@@ -13,6 +13,7 @@ typedef struct {
 	short indexLen;
 	unsigned short* offsets;
 	unsigned char* kerning;
+	unsigned char* valign;
 	
 	GLuint textureID;
 	short texWidth;
@@ -42,7 +43,8 @@ typedef struct {
 // this function is rather expensive. it rebinds textures.
 TextRes* LoadFont(char* path, int size, char* chars);
 
-void drawText(TextRes* font, char* str, int len, Matrix* m);
+
+TextRenderInfo* prepareText(TextRes* font, const char* str, int len);
 
 void FreeFont(TextRes* res);
 

@@ -12,15 +12,19 @@
 
 #include "../c3dlas/c3dlas.h"
 #include "text.h"
-
+#include "../EACSMB/src/utilities.h"
 
 
 
 FT_Library ftLib = NULL;
 
 // all keys on a standard US keyboard.
-char* defaultCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`~!@#$%^&*()_+|-=\\{}[]:;<>?,./'\"";
+char* defaultCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`~!@#$%^&*()_+|-=\\{}[]:;<>?,./'\" ";
 
+// 16.16 fixed point to float conversion
+float f2f(int i) {
+	return ((float)i / 64.0);
+}
 
 
 void blit(
@@ -81,7 +85,7 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 	// slot is a pointer
 	slot = res->fontFace->glyph;
 	
-	if(!chars) chars = defaultCharset;
+	if(!chars) chars = "abc" ;// defaultCharset;
 	res->charSet = strdup(chars);
 	
 	charlen = strlen(chars);
@@ -95,53 +99,65 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 	// first find how wide of a texture we need
 	for(i = 0; i < charlen; i++) { 
 		int ymin;
-		ymin = slot->metrics.height - slot->metrics.horiBearingY;
-		
 		err = FT_Load_Char(res->fontFace, chars[i], FT_LOAD_DEFAULT);
 		
-		width += slot->metrics.width;
-		h_above = MAX(h_above, slot->metrics.horiBearingY);
+		ymin = f2f(slot->metrics.height);// - f2f(slot->metrics.horiBearingY);
+		printf("%c-----\nymin: %d \n", chars[i], ymin);
+		printf("bearingY: %d \n", slot->metrics.horiBearingY >> 6);
+		printf("width: %d \n", slot->metrics.width >> 6);
+		printf("height: %d \n\n", slot->metrics.height >> 6);
+		
+		
+		width += f2f(slot->metrics.width);
+		h_above = MAX(h_above, f2f(slot->metrics.horiBearingY));
 		h_below = MAX(h_below, ymin);
 	}
 	
 	
 	width += charlen * padding;
-	height = h_above + h_below;
+	height = h_below + padding + padding;
+	
 	
 	//TODO: clean up this messy function
-	
+		printf("width: %d, height: %d \n", width, height);
+
 	width = nextPOT(width);
 	height = nextPOT(height);
 	res->texWidth = width;
 	res->texHeight = height;
 	
 	
-	res->texture = (unsigned char*)malloc(width * height);
+	res->texture = (unsigned char*)calloc(width * height, 1);
 	res->offsets = (unsigned short*)calloc(charlen * sizeof(unsigned short), 1);
+	res->valign = (unsigned char*)calloc(charlen * sizeof(unsigned char), 1);
 	
 	// render the glyphs into the texture
-	
+
 	xoffset = 0;
 	for(i = 0; i < charlen; i++) { 
 		
 		err = FT_Load_Char(res->fontFace, chars[i], FT_LOAD_RENDER);
 		
+		printf("xoffset: %d, pitch: %d \n", xoffset, slot->bitmap.pitch);
+		printf("m.width: %d, m.height: %d \n", slot->metrics.width >> 6, slot->metrics.height >> 6);
 		blit(
 			0, 0, // src x and y offset for the image
-			xoffset, 0, // dst offset
-			slot->metrics.width, slot->metrics.height, // width and height BUG probably
+			xoffset + padding, padding, // dst offset
+			slot->metrics.width >> 6, slot->metrics.height >> 6, // width and height BUG probably
 			slot->bitmap.pitch, width, // src and dst row widths
 			slot->bitmap.buffer, // source
 			res->texture); // destination
 		
 		res->offsets[i] = xoffset;
-		xoffset += slot->metrics.width + padding;
+		res->valign[i] = (slot->metrics.height - slot->metrics.horiBearingY) >> 6;
+		xoffset += (slot->metrics.width >> 6) + padding;
 	}
+	
 	
 	// construct code mapping
 	// shitty method for now, improve later
 	res->indexLen = 128; // 7 bits for now.
-	res->texture = (unsigned char*)calloc(res->indexLen, 1);
+	res->codeIndex = (unsigned char*)calloc(res->indexLen, 1);
 	
 	for(i = 0; i < charlen; i++) 
 		res->codeIndex[chars[i]] = i;
@@ -159,19 +175,31 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 	}
 	
 	
+	
 	//////////// opengl stuff ////////////
+// 	int x, y;
+// 	for(y = 0; y < height; y++) {
+// 		for(x = 0; x < width; x++) {
+// 			res->texture[x + (y*width)] = (x % 2) * 126;
+// 		}
+// 	}
 	
 	// TODO: error checking
 	glGenTextures(1, &res->textureID);
 	glBindTexture(GL_TEXTURE_2D, res->textureID);
+	glerr("bind font tex");
 	
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0); // no mipmaps for this; it'll get fucked up
+	glerr("param font tex");
 	
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, res->texture);
+	printf("width: %d, height: %d \n", width, height);
+	
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, res->texture);
+	glerr("load font tex");
 	
 	glBindTexture(GL_TEXTURE_2D, 0);
 	
@@ -179,9 +207,10 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 	return res;
 }
 
-void prepareText(TextRes* font, const char* str, int len, Matrix* m) {
+TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 	
-	int offset, v, i;
+	float offset;
+	int v, i;
 	TextRenderInfo* tri;
 	float uscale, vscale;
 	
@@ -204,13 +233,20 @@ void prepareText(TextRes* font, const char* str, int len, Matrix* m) {
 	//move this to a global
 	glGenVertexArrays(1, &tri->vao);
 	glBindVertexArray(tri->vao);
+
+	// have to create and bind the buffer before specifying its format
+	glGenBuffers(1, &tri->vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, tri->vbo);
+
 	
 	// vertex
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TextVertex), 0);
+	glerr("pos attrib");
 	// uvs
 	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(TextVertex), 3*4);
+	glerr("uv attrib");
 
 	
 	offset = 0;
@@ -223,65 +259,83 @@ void prepareText(TextRes* font, const char* str, int len, Matrix* m) {
 		index = font->codeIndex[str[i]];
 // 		width = font->kerning[index];
 		width = font->offsets[index];
-		tex_offset = font->offsets[index];
-		tex_offset = font->offsets[index + 1];
-		
+		tex_offset = font->offsets[index]* uscale;
+		to_next = font->offsets[index + 1] * uscale;
+		printf("offset %f\n", tex_offset * uscale);
+		printf("next o %f\n", (float)to_next * uscale);
+		printf("uscale %f\n", uscale);
+		tex_offset = 1;
+
 		// add quad, set uv's
-		// bottom left, triangle 1
-		tri->vertices[v].x = 0.0; 
-		tri->vertices[v].y = 0.0;
+		// triangle 1
+		tri->vertices[v].x = 1.0 + offset; 
+		tri->vertices[v].y = 1.0;
 		tri->vertices[v].z = 0.0;
-		tri->vertices[v].u = tex_offset * uscale;
-		tri->vertices[v++].v = 0.0;
+		tri->vertices[v].u = to_next;
+		tri->vertices[v++].v = 1.0;
 		
 		// top left
-		tri->vertices[v].x = 0.0; 
-		tri->vertices[v].y = 1.0;
+		tri->vertices[v].x = 1.0 + offset; 
+		tri->vertices[v].y = 0.0;
 		tri->vertices[v].z = 0.0;
-		tri->vertices[v].u = tex_offset * uscale;
-		tri->vertices[v++].v = 1.0;
+		tri->vertices[v].u = to_next;
+		tri->vertices[v++].v = 0.0;
 
 		// top right
-		tri->vertices[v].x = 0.0; 
+		tri->vertices[v].x = 0.0 + offset; 
 		tri->vertices[v].y = 1.0;
 		tri->vertices[v].z = 0.0;
-		tri->vertices[v].u = to_next * uscale;
+		tri->vertices[v].u = tex_offset;
 		tri->vertices[v++].v = 1.0;
 		
-		// bottom left, triangle 2
-		tri->vertices[v].x = 0.0; 
-		tri->vertices[v].y = 0.0;
+		
+		// triangle 2
+		tri->vertices[v].x = 0.0 + offset; 
+		tri->vertices[v].y = 1.0;
 		tri->vertices[v].z = 0.0;
-		tri->vertices[v].u = tex_offset * uscale;
-		tri->vertices[v++].v = 0.0;
+		tri->vertices[v].u = tex_offset;
+		tri->vertices[v++].v = 1.0;
 		
 		// top right
-		tri->vertices[v].x = 0.0; 
-		tri->vertices[v].y = 1.0;
-		tri->vertices[v].z = 0.0;
-		tri->vertices[v].u = to_next * uscale;
-		tri->vertices[v++].v = 1.0;
-		
-		// bottom right
-		tri->vertices[v].x = 1.0; 
+		tri->vertices[v].x = 1.0 + offset; 
 		tri->vertices[v].y = 0.0;
 		tri->vertices[v].z = 0.0;
-		tri->vertices[v].u = to_next * uscale;
+		tri->vertices[v].u = to_next;
 		tri->vertices[v++].v = 0.0;
 		
+		// bottom right
+		tri->vertices[v].x = 0.0 + offset; 
+		tri->vertices[v].y = 0.0;
+		tri->vertices[v].z = 0.0;
+		tri->vertices[v].u = tex_offset;
+		tri->vertices[v++].v = 0.0;
+		
+		
 		// move right by kerning amount
-		offset += tex_offset;
+		offset += .5; //tex_offset;
 	}
 	
+// 	TextVertex testarr[] = {
+//  		{1.0, 1.0, 0.0, 1.0, 1.0},
+//  		{1.0, 0.0, 0.0, 1.0, 0.0},
+//  		{0.0, 1.0, 0.0, 0.0, 1.0},
+// 
+// 		{0.0, 1.0, 0.0, 0.0, 1.0},
+// 		{1.0, 0.0, 0.0, 1.0, 0.0},
+// 		{0.0, 0.0, 0.0, 0.0, 0.0}
+// 	};
 	
-	glGenBuffers(1, &tri->vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, tri->vbo);
-	glBufferData(GL_ARRAY_BUFFER, len * 2 * 3 * sizeof(TextVertex), tri->vertices, GL_STATIC_DRAW);
 	
+	
+	printf("vertex length: %d \n", v);
+	
+ 	glBufferData(GL_ARRAY_BUFFER, v * sizeof(TextVertex), tri->vertices, GL_STATIC_DRAW);
+//	glBufferData(GL_ARRAY_BUFFER, sizeof(testarr), testarr, GL_STATIC_DRAW);
+	glerr("buffering text vertices");
 	
 	// init shaders elsewhere
 	
-	
+	return tri;
 }
 
 
@@ -290,6 +344,7 @@ void FreeFont(TextRes* res) {
 	free(res->texture);
 	free(res->codeIndex);
 	free(res->offsets);
+	free(res->valign);
 	free(res->kerning);
 	free(res->charSet);
 	

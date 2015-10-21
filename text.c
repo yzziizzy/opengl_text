@@ -167,7 +167,7 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 		
 		res->codeIndex[chars[i]] = i;
 		res->offsets[i] = xoffset;
-		res->valign[i] = (slot->metrics.height - slot->metrics.horiBearingY) >> 6;
+		res->valign[i] = height - (slot->metrics.height >> 6) - (slot->metrics.horiBearingY >> 6);
 		xoffset += paddedw;
 	}
 	
@@ -275,7 +275,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 	offset = 0;
 	v = 0;
 	for(i = 0; i < len; i++) {
-		float width;
+		float width, valign;
 		float tex_offset, to_next;
 		int index;
 		
@@ -284,11 +284,13 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 		width = font->charWidths[index] * scale;
 		tex_offset = font->offsets[index]* uscale;
 		to_next = font->offsets[index + 1] * uscale; // bug at end of array
+		valign = font->valign[index] * scale;
 		
 		printf("index: %d, char: %c\n", index, str[i]);
 		printf("offset %f\n", tex_offset);
 		printf("next o %f\n", (float)to_next * uscale);
 		printf("uscale %f\n", uscale);
+		printf("valign %d\n", font->valign[index]);
 		printf("width %f\n\n", width);
 		
 		//tex_offset = 1;
@@ -296,21 +298,21 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 		// add quad, set uv's
 		// triangle 1
 		tri->vertices[v].x = width + offset; 
-		tri->vertices[v].y = 1.0;
+		tri->vertices[v].y = 1.0 + valign;
 		tri->vertices[v].z = 0.0;
 		tri->vertices[v].u = to_next;
 		tri->vertices[v++].v = 1.0;
 		
 		// top left
 		tri->vertices[v].x = width + offset; 
-		tri->vertices[v].y = 0.0;
+		tri->vertices[v].y = 0.0 + valign;
 		tri->vertices[v].z = 0.0;
 		tri->vertices[v].u = to_next;
 		tri->vertices[v++].v = 0.0;
 
 		// top right
 		tri->vertices[v].x = 0.0 + offset; 
-		tri->vertices[v].y = 1.0;
+		tri->vertices[v].y = 1.0 + valign;
 		tri->vertices[v].z = 0.0;
 		tri->vertices[v].u = tex_offset;
 		tri->vertices[v++].v = 1.0;
@@ -318,21 +320,21 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 		
 		// triangle 2
 		tri->vertices[v].x = 0.0 + offset; 
-		tri->vertices[v].y = 1.0;
+		tri->vertices[v].y = 1.0 + valign;
 		tri->vertices[v].z = 0.0;
 		tri->vertices[v].u = tex_offset;
 		tri->vertices[v++].v = 1.0;
 		
 		// top right
 		tri->vertices[v].x = width + offset; 
-		tri->vertices[v].y = 0.0;
+		tri->vertices[v].y = 0.0 + valign;
 		tri->vertices[v].z = 0.0;
 		tri->vertices[v].u = to_next;
 		tri->vertices[v++].v = 0.0;
 		
 		// bottom right
 		tri->vertices[v].x = 0.0 + offset; 
-		tri->vertices[v].y = 0.0;
+		tri->vertices[v].y = 0.0 + valign;
 		tri->vertices[v].z = 0.0;
 		tri->vertices[v].u = tex_offset;
 		tri->vertices[v++].v = 0.0;

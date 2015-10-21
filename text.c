@@ -22,12 +22,12 @@ FT_Library ftLib = NULL;
 char* defaultCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`~!@#$%^&*()_+|-=\\{}[]:;<>?,./'\" ";
 
 // 16.16 fixed point to float conversion
-float f2f(int i) {
-	return ((float)i / 64.0);
+static float f2f(int i) {
+	return (float)(i >> 6);
 }
 
 
-void blit(
+static void blit(
 	int src_x, int src_y, int dst_x, int dst_y, int w, int h,
 	int src_w, int dst_w, unsigned char* src, unsigned char* dst) {
 	
@@ -85,7 +85,7 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 	// slot is a pointer
 	slot = res->fontFace->glyph;
 	
-	if(!chars) chars = "abc" ;// defaultCharset;
+	if(!chars) chars = defaultCharset;
 	res->charSet = strdup(chars);
 	
 	charlen = strlen(chars);
@@ -101,7 +101,7 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 		int ymin;
 		err = FT_Load_Char(res->fontFace, chars[i], FT_LOAD_DEFAULT);
 		
-		ymin = f2f(slot->metrics.height);// - f2f(slot->metrics.horiBearingY);
+		ymin = slot->metrics.height >> 6;// - f2f(slot->metrics.horiBearingY);
 		printf("%c-----\nymin: %d \n", chars[i], ymin);
 		printf("bearingY: %d \n", slot->metrics.horiBearingY >> 6);
 		printf("width: %d \n", slot->metrics.width >> 6);
@@ -109,7 +109,7 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 		
 		
 		width += f2f(slot->metrics.width);
-		h_above = MAX(h_above, f2f(slot->metrics.horiBearingY));
+		h_above = MAX(h_above, slot->metrics.horiBearingY >> 6);
 		h_below = MAX(h_below, ymin);
 	}
 	
@@ -117,29 +117,46 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 	width += charlen * padding;
 	height = h_below + padding + padding;
 	
+	res->maxHeight = height;
 	
 	//TODO: clean up this messy function
-		printf("width: %d, height: %d \n", width, height);
+	printf("width: %d, height: %d \n", width, height);
 
 	width = nextPOT(width);
 	height = nextPOT(height);
 	res->texWidth = width;
-	res->texHeight = height;
+	res->texHeight = height; // may not always just be one row
 	
 	
 	res->texture = (unsigned char*)calloc(width * height, 1);
 	res->offsets = (unsigned short*)calloc(charlen * sizeof(unsigned short), 1);
+	res->charWidths = (unsigned short*)calloc(charlen * sizeof(unsigned short), 1);
 	res->valign = (unsigned char*)calloc(charlen * sizeof(unsigned char), 1);
 	
-	// render the glyphs into the texture
 
+	// construct code mapping
+	// shitty method for now, improve later
+	res->indexLen = 128; // 7 bits for now.
+	res->codeIndex = (unsigned char*)calloc(res->indexLen, 1);
+	
+// 	for(i = 0; i < charlen; i++) 
+// 		res->codeIndex[chars[i]] = i;
+	
+	
+	// render the glyphs into the texture
+	
 	xoffset = 0;
 	for(i = 0; i < charlen; i++) { 
+		int paddedw;
 		
 		err = FT_Load_Char(res->fontFace, chars[i], FT_LOAD_RENDER);
 		
-		printf("xoffset: %d, pitch: %d \n", xoffset, slot->bitmap.pitch);
-		printf("m.width: %d, m.height: %d \n", slot->metrics.width >> 6, slot->metrics.height >> 6);
+		paddedw = (slot->metrics.width >> 6) + padding;
+		
+		res->charWidths[i] = paddedw + padding;
+		
+		printf("index: %d, char: %c, xoffset: %d, pitch: %d \n", i, chars[i], xoffset, slot->bitmap.pitch);
+		printf("m.width: %d, m.height: %d \n\n", slot->metrics.width >> 6, slot->metrics.height >> 6);
 		blit(
 			0, 0, // src x and y offset for the image
 			xoffset + padding, padding, // dst offset
@@ -148,20 +165,14 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 			slot->bitmap.buffer, // source
 			res->texture); // destination
 		
+		res->codeIndex[chars[i]] = i;
 		res->offsets[i] = xoffset;
 		res->valign[i] = (slot->metrics.height - slot->metrics.horiBearingY) >> 6;
-		xoffset += (slot->metrics.width >> 6) + padding;
+		xoffset += paddedw;
 	}
 	
 	
-	// construct code mapping
-	// shitty method for now, improve later
-	res->indexLen = 128; // 7 bits for now.
-	res->codeIndex = (unsigned char*)calloc(res->indexLen, 1);
-	
-	for(i = 0; i < charlen; i++) 
-		res->codeIndex[chars[i]] = i;
-	
+
 	
 	// kerning map
 	res->kerning = (unsigned char*)malloc(charlen * charlen);
@@ -212,7 +223,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 	float offset;
 	int v, i;
 	TextRenderInfo* tri;
-	float uscale, vscale;
+	float uscale, vscale, scale;
 	
 	
 	//TODO: 
@@ -224,6 +235,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 	if(len == -1) len = strlen(str);
 	uscale = 1.0 / font->texWidth; 
 	vscale = 1.0 / font->texHeight; 
+	scale = 1.0 / font->maxHeight;
 	
 	// create vao/vbo
 	tri = (TextRenderInfo*)malloc(sizeof(TextRenderInfo));
@@ -248,34 +260,49 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(TextVertex), 3*4);
 	glerr("uv attrib");
 
+	int k;
+	for(k=0; k < font->charLen; k++) {
+		printf(" off %d (%c): %d | %d\n", 
+			k, 
+			font->charSet[k], 
+			font->offsets[k],
+			font->codeIndex[font->charSet[k]]
+			
+		); 
+		
+	}
 	
 	offset = 0;
 	v = 0;
 	for(i = 0; i < len; i++) {
-		int width;
-		int tex_offset, to_next;
+		float width;
+		float tex_offset, to_next;
 		int index;
 		
 		index = font->codeIndex[str[i]];
 // 		width = font->kerning[index];
-		width = font->offsets[index];
+		width = font->charWidths[index] * scale;
 		tex_offset = font->offsets[index]* uscale;
-		to_next = font->offsets[index + 1] * uscale;
-		printf("offset %f\n", tex_offset * uscale);
+		to_next = font->offsets[index + 1] * uscale; // bug at end of array
+		
+		printf("index: %d, char: %c\n", index, str[i]);
+		printf("offset %f\n", tex_offset);
 		printf("next o %f\n", (float)to_next * uscale);
 		printf("uscale %f\n", uscale);
-		tex_offset = 1;
+		printf("width %f\n\n", width);
+		
+		//tex_offset = 1;
 
 		// add quad, set uv's
 		// triangle 1
-		tri->vertices[v].x = 1.0 + offset; 
+		tri->vertices[v].x = width + offset; 
 		tri->vertices[v].y = 1.0;
 		tri->vertices[v].z = 0.0;
 		tri->vertices[v].u = to_next;
 		tri->vertices[v++].v = 1.0;
 		
 		// top left
-		tri->vertices[v].x = 1.0 + offset; 
+		tri->vertices[v].x = width + offset; 
 		tri->vertices[v].y = 0.0;
 		tri->vertices[v].z = 0.0;
 		tri->vertices[v].u = to_next;
@@ -297,7 +324,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 		tri->vertices[v++].v = 1.0;
 		
 		// top right
-		tri->vertices[v].x = 1.0 + offset; 
+		tri->vertices[v].x = width + offset; 
 		tri->vertices[v].y = 0.0;
 		tri->vertices[v].z = 0.0;
 		tri->vertices[v].u = to_next;

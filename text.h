@@ -11,9 +11,12 @@ typedef struct {
 	unsigned char* codeIndex;
 	short charLen;
 	short indexLen;
-	unsigned short* offsets;
+	unsigned short* offsets;  // texture offsets
 	unsigned char* kerning;
-	unsigned char* valign;
+	unsigned char* valign; // vertical offset for gutters
+	unsigned short* charWidths; // quad widths
+	
+	short maxWidth, maxHeight;
 	
 	GLuint textureID;
 	short texWidth;

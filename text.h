@@ -17,6 +17,7 @@ typedef struct {
 	unsigned short* charWidths; // quad widths
 	
 	short maxWidth, maxHeight;
+	short padding;
 	
 	GLuint textureID;
 	short texWidth;

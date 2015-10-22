@@ -29,6 +29,7 @@ typedef struct {
 typedef struct {
 	float x,y,z;
 	float u,v;
+	unsigned int rgba;
 } TextVertex;
 
 typedef struct {

@@ -239,6 +239,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 	int v, i;
 	TextRenderInfo* tri;
 	float uscale, vscale, scale;
+	unsigned int color;
 	
 	
 	//TODO: 
@@ -275,6 +276,10 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(TextVertex), 3*4);
 	glerr("uv attrib");
 
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(TextVertex), 5*4);
+	glerr("color attrib");
+
 // 	int k;
 // 	for(k=0; k < font->charLen; k++) {
 // 		printf(" off %d (%c): %d | %d\n", 
@@ -294,6 +299,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 		float tex_offset, to_next;
 		int index, prev;
 		
+		color = 0xFF00FF00;
 		
 		
 		index = font->codeIndex[str[i]];
@@ -326,6 +332,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 		tri->vertices[v].x = width + offset; 
 		tri->vertices[v].y = 1.0 + valign;
 		tri->vertices[v].z = 0.0;
+		tri->vertices[v].rgba = color;
 		tri->vertices[v].u = to_next;
 		tri->vertices[v++].v = 1.0;
 		
@@ -333,6 +340,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 		tri->vertices[v].x = width + offset; 
 		tri->vertices[v].y = 0.0 + valign;
 		tri->vertices[v].z = 0.0;
+		tri->vertices[v].rgba = color;
 		tri->vertices[v].u = to_next;
 		tri->vertices[v++].v = 0.0;
 
@@ -340,6 +348,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 		tri->vertices[v].x = 0.0 + offset; 
 		tri->vertices[v].y = 1.0 + valign;
 		tri->vertices[v].z = 0.0;
+		tri->vertices[v].rgba = color;
 		tri->vertices[v].u = tex_offset;
 		tri->vertices[v++].v = 1.0;
 		
@@ -348,6 +357,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 		tri->vertices[v].x = 0.0 + offset; 
 		tri->vertices[v].y = 1.0 + valign;
 		tri->vertices[v].z = 0.0;
+		tri->vertices[v].rgba = color;
 		tri->vertices[v].u = tex_offset;
 		tri->vertices[v++].v = 1.0;
 		
@@ -355,6 +365,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 		tri->vertices[v].x = width + offset; 
 		tri->vertices[v].y = 0.0 + valign;
 		tri->vertices[v].z = 0.0;
+		tri->vertices[v].rgba = color;
 		tri->vertices[v].u = to_next;
 		tri->vertices[v++].v = 0.0;
 		
@@ -362,6 +373,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 		tri->vertices[v].x = 0.0 + offset; 
 		tri->vertices[v].y = 0.0 + valign;
 		tri->vertices[v].z = 0.0;
+		tri->vertices[v].rgba = color;
 		tri->vertices[v].u = tex_offset;
 		tri->vertices[v++].v = 0.0;
 		

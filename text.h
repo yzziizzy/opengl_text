@@ -49,7 +49,7 @@ typedef struct {
 TextRes* LoadFont(char* path, int size, char* chars);
 
 
-TextRenderInfo* prepareText(TextRes* font, const char* str, int len);
+TextRenderInfo* prepareText(TextRes* font, const char* str, int len, unsigned int* colors);
 
 void FreeFont(TextRes* res);
 

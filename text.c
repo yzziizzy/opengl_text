@@ -140,10 +140,6 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 	res->indexLen = 128; // 7 bits for now.
 	res->codeIndex = (unsigned char*)calloc(res->indexLen, 1);
 	
-// 	for(i = 0; i < charlen; i++) 
-// 		res->codeIndex[chars[i]] = i;
-	
-	
 	// render the glyphs into the texture
 	
 	xoffset = 0;
@@ -192,8 +188,6 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 			
 			right = FT_Get_Char_Index(res->fontFace, chars[j]);
 			
-			// TODO: calculate real kerning 
-			
 			FT_Get_Kerning(res->fontFace, left, right, FT_KERNING_DEFAULT, &k);
 			if(k.x != 0) printf("k: (%c%c) %d, %d\n", chars[i],chars[j], k.x, k.x >> 6);
 			res->kerning[(i * charlen) + j] = k.x >> 6;
@@ -203,12 +197,6 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 	
 	
 	//////////// opengl stuff ////////////
-// 	int x, y;
-// 	for(y = 0; y < height; y++) {
-// 		for(x = 0; x < width; x++) {
-// 			res->texture[x + (y*width)] = (x % 2) * 126;
-// 		}
-// 	}
 	
 	// TODO: error checking
 	glGenTextures(1, &res->textureID);
@@ -233,7 +221,10 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 	return res;
 }
 
-TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
+
+
+
+TextRenderInfo* prepareText(TextRes* font, const char* str, int len, unsigned int* colors) {
 	
 	float offset;
 	int v, i;
@@ -241,6 +232,10 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 	float uscale, vscale, scale;
 	unsigned int color;
 	
+	unsigned int defaultColor[] = {0xBADA55FF, INT_MAX}; // you have serious problems if the string is longer than INT_MAX
+	
+	if(!colors)
+		colors = &defaultColor;
 	
 	//TODO: 
 	// normalize uv's
@@ -299,7 +294,10 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 		float tex_offset, to_next;
 		int index, prev;
 		
-		color = 0xFF00FF00;
+		//increment the colors pointer if we reach the next change point
+		if(i == colors[1]) colors += 2;
+		
+		color = *colors;
 		
 		
 		index = font->codeIndex[str[i]];

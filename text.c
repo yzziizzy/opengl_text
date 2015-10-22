@@ -183,11 +183,20 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 	// kerning map
 	res->kerning = (unsigned char*)malloc(charlen * charlen);
 	for(i = 0; i < charlen; i++) {
+		FT_UInt left, right;
+		FT_Vector k;
+		
+		left = FT_Get_Char_Index(res->fontFace, chars[i]);
+		
 		for(j = 0; j < charlen; j++) {
 			
-			// TODO: calculate real kerning 
-			res->kerning[(i * charlen) + j] = 0;
+			right = FT_Get_Char_Index(res->fontFace, chars[j]);
 			
+			// TODO: calculate real kerning 
+			
+			FT_Get_Kerning(res->fontFace, left, right, FT_KERNING_DEFAULT, &k);
+			if(k.x != 0) printf("k: (%c%c) %d, %d\n", chars[i],chars[j], k.x, k.x >> 6);
+			res->kerning[(i * charlen) + j] = k.x >> 6;
 		}
 	}
 	
@@ -281,16 +290,27 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 	offset = 0;
 	v = 0;
 	for(i = 0; i < len; i++) {
-		float width, valign;
+		float width, valign, kerning;
 		float tex_offset, to_next;
-		int index;
+		int index, prev;
+		
+		
 		
 		index = font->codeIndex[str[i]];
+		prev = font->codeIndex[str[i-1]];
 // 		width = font->kerning[index];
 		width = font->charWidths[index] * scale;
 		tex_offset = (font->offsets[index] + font->padding) * uscale;
 		to_next = (font->offsets[index + 1] + font->padding) * uscale; // bug at end of array
-		valign = 0; //font->valign[index] * scale;
+		
+		kerning = 0;
+		if(i > 0)
+			kerning = (font->kerning[(index * font->charLen) + prev]) * uscale; // bug at end of array
+		
+		offset -= (font->padding * 2) * vscale;
+		offset -= kerning;
+		
+		printf("kerning: %f\n", kerning);
 		
 		printf("index: %d, char: %c\n", index, str[i]);
 		printf("offset %f\n", tex_offset);
@@ -347,7 +367,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len) {
 		
 		
 		// move right by kerning amount
-		offset += width - .1; //tex_offset;
+		offset += width; //tex_offset;
 	}
 	
 	tri->vertexCnt = v;

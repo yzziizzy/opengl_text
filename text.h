@@ -36,7 +36,10 @@ typedef struct {
 	TextVertex* vertices;
 	int vertexCnt;
 	
-	GLuint vao;
+	char* text;
+	int textLen;
+	
+	GLuint vao; // need to move vao to font? global?
 	GLuint vbo;
 	
 	TextRes* font;
@@ -53,7 +56,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len, unsigned in
 
 void FreeFont(TextRes* res);
 
-
+void updateText(TextRenderInfo* tri, const char* str, int len, unsigned int* colors);
 
 
 

@@ -18,8 +18,27 @@
 
 FT_Library ftLib = NULL;
 
+static void makeVertices(TextRenderInfo* tri, unsigned int* colors);
+
+
+/*
+A Note About Charsets:
+
+All characters specified will be packed into a texture then shoved into video ram.
+There is a limit to the size of textures. A large font size and large character 
+set may not fit in the largest texture available. Even if it does, precious vram 
+is used for every character added. This is not the place to be a unicode twat;
+specify only the characters you will actually use. And for God's sake, don't try
+to render traditional Chinese at 64pt... you'd use 80+mb of ram.
+
+Also note the kerning information is n^2 in size with respect to strlen(charset).
+Currently this information is in system memory but eventually most operations
+will be moved to the gpu. Geometry shaders are amazing.
+
+*/
+
 // all keys on a standard US keyboard.
-char* defaultCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`~!@#$%^&*()_+|-=\\{}[]:;<>?,./'\" ";
+char* defaultCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 `~!@#$%^&*()_+|-=\\{}[]:;<>?,./'\"";
 
 // 16.16 fixed point to float conversion
 static float f2f(int i) {
@@ -102,11 +121,12 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 		err = FT_Load_Char(res->fontFace, chars[i], FT_LOAD_DEFAULT);
 		
 		ymin = slot->metrics.height >> 6;// - f2f(slot->metrics.horiBearingY);
+/*
 		printf("%c-----\nymin: %d \n", chars[i], ymin);
 		printf("bearingY: %d \n", slot->metrics.horiBearingY >> 6);
 		printf("width: %d \n", slot->metrics.width >> 6);
 		printf("height: %d \n\n", slot->metrics.height >> 6);
-		
+*/		
 		
 		width += f2f(slot->metrics.width);
 		h_above = MAX(h_above, slot->metrics.horiBearingY >> 6);
@@ -121,7 +141,7 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 	res->padding = padding / 2;
 	
 	//TODO: clean up this messy function
-	printf("width: %d, height: %d \n", width, height);
+//	printf("width: %d, height: %d \n", width, height);
 
 	width = nextPOT(width);
 	height = nextPOT(height);
@@ -155,10 +175,10 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 		
 		res->charWidths[i] = paddedw + padding;
 		
-		printf("meh: %d\n", height - charHeight); 
+/*		printf("meh: %d\n", height - charHeight); 
 		printf("index: %d, char: %c, xoffset: %d, pitch: %d \n", i, chars[i], xoffset, slot->bitmap.pitch);
 		printf("m.width: %d, m.height: %d, hbearing: %d, habove: %d \n\n", slot->metrics.width >> 6, slot->metrics.height >> 6, slot->metrics.horiBearingY >> 6, h_above);
-		blit(
+*/		blit(
 			0, 0, // src x and y offset for the image
 			xoffset + padding, padding + (h_above - bearingY), // dst offset
 			slot->metrics.width >> 6, slot->metrics.height >> 6, // width and height BUG probably
@@ -189,7 +209,7 @@ TextRes* LoadFont(char* path, int size, char* chars) {
 			right = FT_Get_Char_Index(res->fontFace, chars[j]);
 			
 			FT_Get_Kerning(res->fontFace, left, right, FT_KERNING_DEFAULT, &k);
-			if(k.x != 0) printf("k: (%c%c) %d, %d\n", chars[i],chars[j], k.x, k.x >> 6);
+		//	if(k.x != 0) printf("k: (%c%c) %d, %d\n", chars[i],chars[j], k.x, k.x >> 6);
 			res->kerning[(i * charlen) + j] = k.x >> 6;
 		}
 	}
@@ -239,19 +259,18 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len, unsigned in
 	
 	//TODO: 
 	// normalize uv's
-	// use real kerning info after it's filled in
-	// move VAO to a global
+	// investigate and fix kerning, it seems off
+	// move VAO to a better spot
 	
 	
 	if(len == -1) len = strlen(str);
-	uscale = 1.0 / font->texWidth; 
-	vscale = 1.0 / font->texHeight; 
-	scale = 1.0 / font->maxHeight;
 	
 	// create vao/vbo
 	tri = (TextRenderInfo*)malloc(sizeof(TextRenderInfo));
 	tri->vertices = (TextVertex*)malloc(len * 2 * 3 * sizeof(TextVertex));
 	tri->font = font;
+	tri->text = strdup(str);
+	tri->textLen = len;
 	
 	//move this to a global
 	glGenVertexArrays(1, &tri->vao);
@@ -275,21 +294,37 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len, unsigned in
 	glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(TextVertex), 5*4);
 	glerr("color attrib");
 
-// 	int k;
-// 	for(k=0; k < font->charLen; k++) {
-// 		printf(" off %d (%c): %d | %d\n", 
-// 			k, 
-// 			font->charSet[k], 
-// 			font->offsets[k],
-// 			font->codeIndex[font->charSet[k]]
-// 			
-// 		); 
-// 		
-// 	}
+	
+	makeVertices(tri, colors);
+	
+ 	glBufferData(GL_ARRAY_BUFFER, tri->vertexCnt * sizeof(TextVertex), tri->vertices, GL_STATIC_DRAW);
+//	glBufferData(GL_ARRAY_BUFFER, sizeof(testarr), testarr, GL_STATIC_DRAW);
+	glerr("buffering text vertices");
+	
+	// init shaders elsewhere
+	
+	return tri;
+}
+
+
+// internal use.
+static void makeVertices(TextRenderInfo* tri, unsigned int* colors) {
+	float offset, uscale, vscale, scale;
+	int v, i;
+	char* str;
+	TextRes* font;
+	unsigned int color;
+	
+	str = tri->text;
+	font = tri->font;
+	
+	uscale = 1.0 / font->texWidth; 
+	vscale = 1.0 / font->texHeight; 
+	scale = 1.0 / font->maxHeight;
 	
 	offset = 0;
 	v = 0;
-	for(i = 0; i < len; i++) {
+	for(i = 0; i < tri->textLen; i++) {
 		float width, valign, kerning;
 		float tex_offset, to_next;
 		int index, prev;
@@ -313,7 +348,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len, unsigned in
 		
 		offset -= (font->padding * 2) * vscale;
 		offset -= kerning;
-		
+	/*	
 		printf("kerning: %f\n", kerning);
 		
 		printf("index: %d, char: %c\n", index, str[i]);
@@ -322,7 +357,7 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len, unsigned in
 		printf("uscale %f\n", uscale);
 		printf("valign %d\n", font->valign[index]);
 		printf("width %f\n\n", width);
-		
+	*/
 		//tex_offset = 1;
 
 		// add quad, set uv's
@@ -381,29 +416,8 @@ TextRenderInfo* prepareText(TextRes* font, const char* str, int len, unsigned in
 	}
 	
 	tri->vertexCnt = v;
-// 	TextVertex testarr[] = {
-//  		{1.0, 1.0, 0.0, 1.0, 1.0},
-//  		{1.0, 0.0, 0.0, 1.0, 0.0},
-//  		{0.0, 1.0, 0.0, 0.0, 1.0},
-// 
-// 		{0.0, 1.0, 0.0, 0.0, 1.0},
-// 		{1.0, 0.0, 0.0, 1.0, 0.0},
-// 		{0.0, 0.0, 0.0, 0.0, 0.0}
-// 	};
-	
-	
-	
-	printf("vertex length: %d \n", v);
-	
- 	glBufferData(GL_ARRAY_BUFFER, v * sizeof(TextVertex), tri->vertices, GL_STATIC_DRAW);
-//	glBufferData(GL_ARRAY_BUFFER, sizeof(testarr), testarr, GL_STATIC_DRAW);
-	glerr("buffering text vertices");
-	
-	// init shaders elsewhere
-	
-	return tri;
-}
 
+}
 
 
 void FreeFont(TextRes* res) {
@@ -431,6 +445,64 @@ int nextPOT(int in) {
 	in++;
 	
 	return in;
+}
+
+
+void updateText(TextRenderInfo* tri, const char* str, int len, unsigned int* colors) {
+	
+	if(len <= 0) len = strlen(str);
+	
+	// text hasn't changed
+	if(0 == strcmp(str, tri->text)) return;
+	
+	// need to check if colors changes too, but meh
+	
+	// reallocate the vertex data buffer if it's too small
+	if(tri->vertices && len > tri->textLen) {
+		free(tri->vertices);
+		tri->vertices = (TextVertex*)malloc(len * 2 * 3 * sizeof(TextVertex));
+	}
+	
+	if(tri->text) free(tri->text);
+	tri->text = strdup(str);
+	tri->textLen = len;
+	
+	// i've read that trying to update a vbo when opengl is rendering can force a
+	// disasterous gpu<->cpu sync. here the old vbo is released (hopefully async)
+	// and the next frame will get the new vbo (all hopefully async). this has not 
+	// been comparatively tested.
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	GLuint oldvbo = tri->vbo;
+	
+	glBindVertexArray(tri->vao);
+	
+	glGenBuffers(1, &tri->vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, tri->vbo);
+	glexit("update text buffer creation");
+	
+	glDeleteBuffers(1, &oldvbo);
+	
+		// vertex
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TextVertex), 0);
+	glerr("pos attrib");
+	// uvs
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(TextVertex), 3*4);
+	glerr("uv attrib");
+
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(TextVertex), 5*4);
+	glerr("color attrib");
+
+
+	
+	makeVertices(tri, colors);
+	
+ 	glBufferData(GL_ARRAY_BUFFER, tri->vertexCnt * sizeof(TextVertex), tri->vertices, GL_STATIC_DRAW);
+//	glBufferData(GL_ARRAY_BUFFER, sizeof(testarr), testarr, GL_STATIC_DRAW);
+	glerr("buffering text vertices");
+
 }
 
 

@@ -506,3 +506,9 @@ void updateText(TextRenderInfo* tri, const char* str, int len, unsigned int* col
 }
 
 
+
+
+
+
+
+
